@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InSAR可视化平台</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🌍</text></svg>">
+    <link href="https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium/Widgets/widgets.css" rel="stylesheet" id="cesiumCss">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+
+        #rightSidebar {
+            position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 4px;
+            background: rgba(28, 32, 42, 0.85); backdrop-filter: blur(12px);
+            border-radius: 10px 0 0 10px; padding: 8px 6px; z-index: 100;
+            border: 1px solid rgba(255,255,255,0.06); box-shadow: -2px 0 20px rgba(0,0,0,0.3);
+        }
+        #rightSidebar .module-btn {
+            width: 48px; height: 48px; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; border: none; border-radius: 8px;
+            background: transparent; color: rgba(255,255,255,0.55); cursor: pointer;
+            transition: all 0.25s; font-size: 11px; gap: 2px;
+        }
+        #rightSidebar .module-btn:hover { background: rgba(74, 158, 255, 0.15); color: #fff; }
+        #rightSidebar .module-btn.active { background: rgba(74, 158, 255, 0.25); color: #4A9EFF; box-shadow: inset 0 0 0 1px rgba(74,158,255,0.3); }
+        #rightSidebar .module-btn .icon { font-size: 20px; line-height: 1; }
+        #rightSidebar .module-btn .label { font-size: 10px; white-space: nowrap; }
+
+        #leftPanel {
+            position: absolute; left: 0; top: 0; bottom: 0; width: 420px;
+            background: rgba(22, 26, 36, 0.92); backdrop-filter: blur(16px);
+            border-right: 1px solid rgba(255,255,255,0.06); z-index: 99;
+            transform: translateX(-100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex; flex-direction: column; color: #e0e4ec; box-shadow: 2px 0 30px rgba(0,0,0,0.4);
+        }
+        #leftPanel.open { transform: translateX(0); }
+        #leftPanel .panel-header { padding: 16px 20px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        #leftPanel .panel-header h2 { font-size: 16px; font-weight: 600; color: #fff; }
+        #leftPanel .panel-header h2 .module-icon { margin-right: 6px; }
+        #leftPanel .panel-header .close-btn { width: 32px; height: 32px; border: none; border-radius: 6px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); cursor: pointer; font-size: 18px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+        #leftPanel .panel-header .close-btn:hover { background: rgba(255,80,80,0.2); color: #ff5050; }
+        #leftPanel .panel-body { flex: 1; overflow-y: auto; padding: 12px 20px 20px; }
+        #leftPanel .panel-body::-webkit-scrollbar { width: 4px; }
+        #leftPanel .panel-body::-webkit-scrollbar-track { background: transparent; }
+        #leftPanel .panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+        .module-content { display: none; }
+        .module-content.active { display: block; }
+
+        .accordion { margin-bottom: 10px; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); }
+        .accordion-header { padding: 12px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 500; color: #c8d0dc; user-select: none; transition: background 0.2s; }
+        .accordion-header:hover { background: rgba(255,255,255,0.04); }
+        .accordion-header .arrow { transition: transform 0.25s; font-size: 10px; color: rgba(255,255,255,0.3); }
+        .accordion-header .arrow.open { transform: rotate(90deg); }
+        .accordion-body { padding: 0 14px 14px; display: none; }
+        .accordion-body.open { display: block; }
+
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+        .form-group .hint { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 4px; }
+
+        .btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 5px; }
+        .btn-primary { background: #a2bedf; color: #fff; }
+        .btn-primary:hover { background: #3a8ef0; }
+        .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-danger { background: rgba(255,80,80,0.2); color: #ff6b6b; }
+        .btn-danger:hover { background: rgba(255,80,80,0.35); }
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+        .btn-ghost { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7); }
+        .btn-ghost:hover { background: rgba(255,255,255,0.12); color: #fff; }
+        .btn-success { background: rgba(0,200,100,0.2); color: #4cdb8a; }
+        .btn-success:hover { background: rgba(0,200,100,0.35); }
+        .btn-warning { background: rgba(255,180,0,0.2); color: #ffc44d; }
+        .btn-warning:hover { background: rgba(255,180,0,0.35); }
+
+        .file-upload-zone { border: 2px dashed rgba(255,255,255,0.12); border-radius: 8px; padding: 22px 16px; text-align: center; cursor: pointer; transition: all 0.25s; background: rgba(255,255,255,0.02); }
+        .file-upload-zone:hover, .file-upload-zone.dragover { border-color: #4A9EFF; background: rgba(74, 158, 255, 0.06); }
+        .file-upload-zone .icon { font-size: 30px; color: rgba(255,255,255,0.15); margin-bottom: 6px; }
+        .file-upload-zone .text { font-size: 12px; color: rgba(255,255,255,0.4); }
+        .file-upload-zone .formats { font-size: 11px; color: rgba(255,255,255,0.25); margin-top: 4px; }
+
+        .file-info { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; margin-top: 6px; background: rgba(74,158,255,0.08); border-radius: 6px; font-size: 12px; }
+        .file-info .name { color: #8ab8ff; word-break: break-all; }
+        .file-info .remove { cursor: pointer; color: rgba(255,255,255,0.3); transition: color 0.2s; }
+        .file-info .remove:hover { color: #ff5050; }
+
+        .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+        .status-badge.success { background: rgba(0,200,100,0.15); color: #4cdb8a; }
+        .status-badge.warning { background: rgba(255,180,0,0.15); color: #ffc44d; }
+        .status-badge.error { background: rgba(255,80,80,0.15); color: #ff6b6b; }
+        .status-badge.info { background: rgba(74,158,255,0.15); color: #6ab0ff; }
+
+        .progress-bar { height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; margin-top: 6px; }
+        .progress-bar .fill { height: 100%; background: linear-gradient(90deg, #4A9EFF, #6ab0ff); border-radius: 2px; width: 0%; transition: width 0.3s; }
+
+        .dataset-list { margin-top: 4px; }
+        .dataset-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); margin-bottom: 4px; transition: background 0.2s; }
+        .dataset-item:hover { background: rgba(255,255,255,0.06); }
+        .dataset-item .vis-toggle { width: 16px; height: 16px; border-radius: 3px; border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .dataset-item .vis-toggle.visible { background: #4A9EFF; border-color: #4A9EFF; }
+        .dataset-item .vis-toggle.visible::after { content: '✓'; color: #fff; font-size: 10px; font-weight: bold; }
+        .dataset-item .info { flex: 1; min-width: 0; }
+        .dataset-item .info .name { font-size: 12px; color: #c8d0dc; }
+        .dataset-item .info .meta { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 1px; }
+        .dataset-item .del-btn { width: 24px; height: 24px; border: none; border-radius: 4px; background: transparent; color: rgba(255,255,255,0.2); cursor: pointer; font-size: 13px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .dataset-item .del-btn:hover { background: rgba(255,80,80,0.2); color: #ff5050; }
+        .empty-state { text-align: center; padding: 20px 16px; color: rgba(255,255,255,0.25); font-size: 12px; }
+
+        .lod-info { font-size: 12px; }
+        .lod-info .row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .lod-info .row:last-child { border-bottom: none; }
+        .lod-info .row .key { color: rgba(255,255,255,0.4); }
+        .lod-info .row .val { color: #c8d0dc; }
+        .lod-info .row .val.active-level { color: #4A9EFF; font-weight: 600; }
+        .lod-bar-container { margin-top: 8px; }
+        .lod-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.06); position: relative; margin: 4px 0; }
+        .lod-bar .segment { position: absolute; top: 0; bottom: 0; border-radius: 3px; transition: all 0.3s; }
+        .lod-bar .segment.active { background: #4A9EFF; }
+        .lod-bar .segment.inactive { background: rgba(255,255,255,0.08); }
+        .lod-bar .segment-indicator { position: absolute; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: #4A9EFF; border: 2px solid rgba(22,26,36,0.9); transition: left 0.3s; transform: translateX(-50%); }
+        .lod-labels { display: flex; justify-content: space-between; margin-top: 2px; }
+        .lod-labels span { font-size: 10px; color: rgba(255,255,255,0.3); }
+
+        .toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .toast { padding: 10px 20px; border-radius: 8px; font-size: 13px; pointer-events: auto; animation: toastIn 0.3s ease; backdrop-filter: blur(8px); }
+        .toast.success { background: rgba(0,180,80,0.9); color: #fff; }
+        .toast.error { background: rgba(220,50,50,0.9); color: #fff; }
+        .toast.info { background: rgba(40,80,140,0.9); color: #fff; }
+        .toast.warning { background: rgba(200,140,0,0.9); color: #fff; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+        .stat-card { padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.03); text-align: center; }
+        .stat-card .num { font-size: 16px; font-weight: 600; color: #e0e4ec; }
+        .stat-card .lbl { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px; }
+
+        .slider-row { display: flex; align-items: center; gap: 10px; }
+        .slider-row input[type="range"] { flex: 1; }
+        .slider-row .val { font-size: 12px; color: #4A9EFF; min-width: 36px; text-align: right; }
+
+        .switch-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .switch-row:last-child { border-bottom: none; }
+        .switch-row .label { font-size: 12px; color: #c8d0dc; }
+        .switch-row .hint { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 1px; }
+
+        .toggle-switch { width: 36px; height: 20px; background: rgba(255,255,255,0.1); border-radius: 10px; cursor: pointer; position: relative; transition: background 0.25s; flex-shrink: 0; }
+        .toggle-switch.active { background: #4A9EFF; }
+        .toggle-switch .knob { width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: left 0.25s; }
+        .toggle-switch.active .knob { left: 18px; }
+
+        .loaded-files-panel { margin-top: 10px; padding: 8px 10px; background: rgba(74,158,255,0.06); border-radius: 6px; border-left: 3px solid #4A9EFF; }
+        .loaded-files-title { font-size: 12px; color: rgba(255,255,255,0.7); margin-bottom: 6px; font-weight: 500; }
+        .loaded-file-item { font-size: 11px; color: #a0c8ff; padding: 3px 0; display: flex; align-items: center; gap: 6px; }
+        .loaded-file-item::before { content: "📄"; font-size: 10px; }
+
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; margin: 6px 0; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #4A9EFF; cursor: pointer; border: 2px solid rgba(22,26,36,0.9); }
+
+        .color-ramp { height: 16px; border-radius: 4px; margin: 4px 0 8px; background: linear-gradient(90deg,#1e3a8a,#3b82f6,#93c5fd,#fff,#fcd34d,#f97316,#dc2626); }
+        .color-ramp-options { display: flex; gap: 6px; flex-wrap: wrap; }
+        .color-ramp-opt { width: 40px; height: 20px; border-radius: 4px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
+        .color-ramp-opt.active { border-color: #4A9EFF; }
+
+        .blend-select { width: 100%; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.06); color: #c8d0dc; border: 1px solid rgba(255,255,255,0.08); font-size: 12px; outline: none; cursor: pointer; }
+        .blend-select option { background: #1a1e2e; color: #c8d0dc; }
+
+        .tab-bar { display: flex; gap: 2px; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 3px; margin-bottom: 8px; }
+        .tab-bar .tab { flex: 1; padding: 5px 10px; border: none; border-radius: 4px; background: transparent; color: rgba(255,255,255,0.4); font-size: 11px; cursor: pointer; transition: all 0.2s; }
+        .tab-bar .tab.active { background: rgba(74,158,255,0.2); color: #4A9EFF; }
+
+        .vector-map-btn { flex:1; min-width:0; justify-content:center; padding:5px 6px !important; font-size:11px !important; }
+        .vector-map-btn.loaded { background: rgba(74,158,255,0.15) !important; color: #4A9EFF !important; }
+        .vector-map-btn.active-map { background: #4A9EFF !important; color: #fff !important; }
+
+        .feat-item { display:flex; align-items:center; gap:6px; padding:5px 8px; cursor:pointer; font-size:11px; color:rgba(255,255,255,0.6); border-bottom:1px solid rgba(255,255,255,0.03); transition:all 0.15s; }
+        .feat-item:hover { background:rgba(74,158,255,0.1); color:#c8d0dc; }
+        .feat-item:last-child { border-bottom:none; }
+        .feat-item .feat-name { flex:1; }
+        .feat-item .feat-code { font-size:10px; color:rgba(255,255,255,0.2); font-family:monospace; }
+        .feat-item .feat-badge { font-size:9px; padding:1px 5px; border-radius:3px; background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.3); }
+
+        .layer-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,0.02); margin-bottom: 4px; }
+        .layer-item .thumb { font-size: 16px; }
+        .layer-item .info { flex: 1; }
+        .layer-item .info .name { font-size: 12px; color: #c8d0dc; }
+        .layer-item .info .desc { font-size: 11px; color: rgba(255,255,255,0.3); }
+
+        .analysis-result { margin-top: 8px; padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.03); font-size: 12px; }
+        .analysis-result .row { display: flex; justify-content: space-between; padding: 3px 0; }
+        .analysis-result .row .key { color: rgba(255,255,255,0.4); }
+        .analysis-result .row .val { color: #c8d0dc; }
+        .analysis-result .row .val.highlight-down { color: #ff6b6b; font-weight: 600; }
+        .analysis-result .row .val.highlight-up { color: #6ab0ff; font-weight: 600; }
+
+        .time-control { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+        .time-control .time-btn { width: 32px; height: 32px; border: none; border-radius: 6px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7); cursor: pointer; font-size: 14px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .time-control .time-btn:hover { background: rgba(74,158,255,0.2); color: #4A9EFF; }
+        .time-control .time-btn.active { background: rgba(255,60,60,0.2); color: #ff6b6b; }
+        .time-label { font-size: 12px; color: #4A9EFF; text-align: center; min-width: 60px; }
+
+        .anomaly-legend { display: flex; gap: 12px; margin: 6px 0; font-size: 11px; }
+        .anomaly-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 4px; vertical-align: middle; }
+        .anomaly-legend .dot.anomaly { background: #ff00ff; }
+        .anomaly-legend .dot.normal { background: rgba(255,255,255,0.2); }
+
+        .boundary-info { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 4px; background: rgba(74,158,255,0.06); font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 6px; }
+
+        .click-info-box { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 98; background: rgba(22,26,36,0.92); backdrop-filter: blur(12px); border-radius: 8px; padding: 12px 20px; border: 1px solid rgba(255,255,255,0.06); display: none; font-size: 12px; color: #c8d0dc; min-width: 200px; text-align: center; }
+
+        #lineChartContainer {
+            position: absolute; bottom: 20px; right: 70px; z-index: 97;
+            width: 380px; height: 280px;
+            background: rgba(22, 26, 36, 0.95); backdrop-filter: blur(12px);
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: -2px 0 20px rgba(0,0,0,0.3);
+            display: none; flex-direction: column; overflow: hidden;
+        }
+        #lineChartContainer.visible { display: flex; }
+        #lineChartHeader { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 12px; color: #c8d0dc; flex-shrink: 0; }
+        #lineChartCloseBtn { width: 24px; height: 24px; border: none; border-radius: 4px; background: transparent; color: rgba(255,255,255,0.3); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        #lineChartCloseBtn:hover { background: rgba(255,80,80,0.2); color: #ff5050; }
+        #lineChartCanvas { flex: 1; width: 100%; min-height: 0; display: block; }
+
+        #regionStatsFloating {
+            position: absolute; bottom: 20px; right: 70px; z-index: 96;
+            min-width: 220px;
+            background: rgba(22, 26, 36, 0.94); backdrop-filter: blur(12px);
+            border-radius: 10px; border: 1px solid rgba(255,255,255,0.07);
+            box-shadow: -2px 0 20px rgba(0,0,0,0.35);
+            display: none; padding: 12px 16px;
+            font-size: 12px; color: #c8d0dc;
+            transition: bottom 0.25s ease;
+        }
+        #regionStatsFloating.visible { display: block; }
+        #regionStatsFloating .rsf-title { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.7); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; gap: 6px; }
+        #regionStatsFloating .rsf-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
+        #regionStatsFloating .rsf-row .rsf-label { color: rgba(255,255,255,0.4); font-size: 11px; }
+        #regionStatsFloating .rsf-row .rsf-value { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; font-weight: 600; }
+        #regionStatsFloating .rsf-row .rsf-value.down { color: #ff6b6b; }
+        #regionStatsFloating .rsf-row .rsf-value.up { color: #6ab0ff; }
+        #regionStatsFloating .rsf-row .rsf-value.neutral { color: #c8d0dc; }
+        #regionStatsFloating .rsf-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 4px 0; }
+        #regionStatsFloating .rsf-count { font-size: 11px; color: rgba(255,255,255,0.3); text-align: right; margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.04); }
+
+        /* 漫游模式 */
+        .roam-modes { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+        .roam-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); transition: all 0.25s; user-select: none; }
+        .roam-card:hover { background: rgba(74,158,255,0.08); border-color: rgba(74,158,255,0.2); }
+        .roam-card.active { background: rgba(74,158,255,0.12); border-color: #4A9EFF; box-shadow: 0 0 15px rgba(74,158,255,0.1); }
+        .roam-card .icon { font-size: 22px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: rgba(255,255,255,0.04); flex-shrink: 0; }
+        .roam-card .name { font-size: 13px; font-weight: 500; color: #e0e4ec; }
+        .roam-card .desc { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 1px; }
+        .roam-status { display: none; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; font-size: 12px; background: rgba(74,158,255,0.08); color: #6ab0ff; margin-bottom: 12px; }
+        .roam-status.active { display: flex; }
+        .roam-status .pulse { width: 8px; height: 8px; border-radius: 50%; background: #4A9EFF; animation: roamPulse 1.5s ease-in-out infinite; }
+        @keyframes roamPulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+        .waypoint-list { margin-top: 4px; max-height: 180px; overflow-y: auto; }
+        .waypoint-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 4px; background: rgba(255,255,255,0.03); margin-bottom: 3px; font-size: 11px; }
+        .waypoint-item .idx { color: #4A9EFF; font-weight: 500; min-width: 20px; }
+        .waypoint-item .coords { color: rgba(255,255,255,0.6); flex: 1; font-family: monospace; font-size: 10px; }
+        .waypoint-item .remove-wp { cursor: pointer; color: rgba(255,255,255,0.3); transition: color 0.2s; flex-shrink: 0; padding: 2px 4px; }
+        .waypoint-item .remove-wp:hover { color: #ff5050; }
+        .waypoint-hint { display: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; background: rgba(74,158,255,0.1); color: #6ab0ff; margin-bottom: 8px; align-items: center; gap: 6px; }
+        .waypoint-hint.active { display: flex; }
+        .waypoint-hint .dot { width: 6px; height: 6px; border-radius: 50%; background: #4A9EFF; animation: roamPulse 1.5s ease-in-out infinite; }
+
+        @media (max-width: 768px) {
+            #leftPanel { width: calc(100vw - 60px); }
+            #rightSidebar .module-btn { width: 40px; height: 40px; }
+            #rightSidebar .module-btn .icon { font-size: 16px; }
+            #rightSidebar .module-btn .label { display: none; }
+        }
+
+        /* ===================== 顶部工具栏 ===================== */
+        #topToolbar {
+            position: absolute; top: 0; left: 0; right: 0; height: 46px;
+            display: flex; align-items: center; gap: 0;
+            background: rgba(16, 20, 32, 0.92); backdrop-filter: blur(14px);
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            z-index: 200; padding: 0 12px; box-shadow: 0 2px 16px rgba(0,0,0,0.35);
+        }
+        #topToolbar .tb-logo {
+            font-size: 14px; font-weight: 700; color: #4A9EFF;
+            letter-spacing: 0.03em; white-space: nowrap; padding-right: 14px;
+            border-right: 1px solid rgba(255,255,255,0.08); margin-right: 10px;
+        }
+        #topToolbar .tb-sep {
+            width: 1px; height: 24px; background: rgba(255,255,255,0.08);
+            margin: 0 8px; flex-shrink: 0;
+        }
+        #topToolbar .tb-group {
+            display: flex; align-items: center; gap: 2px;
+        }
+        #topToolbar .tb-label {
+            font-size: 10px; color: rgba(255,255,255,0.28); padding: 0 4px 0 6px;
+            letter-spacing: 0.04em; white-space: nowrap; user-select: none;
+        }
+
+        /* 底图切换按钮 */
+        .bm-btn {
+            display: flex; align-items: center; gap: 5px;
+            padding: 5px 10px; border-radius: 5px;
+            border: 1px solid transparent; background: transparent;
+            color: rgba(255,255,255,0.5); cursor: pointer; font-size: 11px;
+            font-family: inherit; white-space: nowrap; transition: all 0.18s;
+        }
+        .bm-btn:hover { background: rgba(255,255,255,0.07); color: #e0e4ec; }
+        .bm-btn.active {
+            background: rgba(74,158,255,0.18); border-color: rgba(74,158,255,0.45);
+            color: #4A9EFF; font-weight: 500;
+        }
+        .bm-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+        /* 工具图标按钮 */
+        .tool-btn {
+            width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; background: transparent; border: 1px solid transparent;
+            color: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.18s; flex-shrink: 0;
+            position: relative;
+        }
+        .tool-btn:hover { background: rgba(255,255,255,0.07); color: #e0e4ec; border-color: rgba(255,255,255,0.1); }
+        .tool-btn.active { background: rgba(74,158,255,0.18); border-color: rgba(74,158,255,0.45); color: #4A9EFF; }
+        .tool-btn svg { width: 16px; height: 16px; }
+        .tool-btn .tb-tooltip {
+            position: absolute; top: 38px; left: 50%; transform: translateX(-50%);
+            background: rgba(10,14,26,0.95); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px; padding: 4px 9px; font-size: 11px; color: #c8d0dc;
+            white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+            z-index: 300;
+        }
+        .tool-btn:hover .tb-tooltip { opacity: 1; }
+
+        /* 缩放组 */
+        .zoom-group { display: flex; align-items: center; gap: 2px; }
+        .zoom-val {
+            font-size: 11px; color: rgba(255,255,255,0.4); min-width: 36px; text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* 测量下拉 */
+        .measure-wrap { position: relative; }
+        .measure-dropdown {
+            position: absolute; top: 40px; left: 0;
+            background: rgba(16,20,32,0.97); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 7px; padding: 4px; min-width: 130px; z-index: 400;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none;
+        }
+        .measure-dropdown.open { display: block; }
+        .mdd-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 7px 10px; border-radius: 5px; cursor: pointer;
+            font-size: 12px; color: rgba(255,255,255,0.55); transition: all 0.14s;
+        }
+        .mdd-item:hover { background: rgba(74,158,255,0.12); color: #e0e4ec; }
+        .mdd-item.active { color: #4A9EFF; background: rgba(74,158,255,0.1); }
+        .mdd-item svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+        /* 地形垂向夸张系数 */
+        .tb-exag-wrap {
+            display: flex; align-items: center; gap: 5px;
+        }
+        #tbExagInput {
+            width: 54px; height: 28px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px; padding: 0 6px;
+            font-size: 12px; color: #e0e4ec; font-family: inherit;
+            outline: none; text-align: center;
+            transition: border-color 0.18s;
+            -moz-appearance: textfield;
+        }
+        #tbExagInput::-webkit-outer-spin-button,
+        #tbExagInput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        #tbExagInput:focus { border-color: rgba(74,158,255,0.55); background: rgba(74,158,255,0.05); }
+        #tbExagInput.invalid { border-color: rgba(255,80,80,0.6); color: #ff8080; }
+        .tb-exag-unit { font-size: 11px; color: rgba(255,255,255,0.3); white-space: nowrap; }
+
+        /* 搜索框 */
+        #tbSearchWrap {
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 6px; padding: 0 10px; height: 30px;
+            flex: 1; max-width: 220px; min-width: 120px; transition: border-color 0.18s;
+        }
+        #tbSearchWrap:focus-within { border-color: rgba(74,158,255,0.55); background: rgba(74,158,255,0.05); }
+        #tbSearchWrap svg { width: 13px; height: 13px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
+        #tbSearchInput {
+            background: transparent; border: none; outline: none;
+            font-size: 12px; color: #e0e4ec; width: 100%; font-family: inherit;
+        }
+        #tbSearchInput::placeholder { color: rgba(255,255,255,0.25); }
+
+        /* 测量结果提示 */
+        #measureTip {
+            position: absolute; top: 58px; left: 50%; transform: translateX(-50%);
+            background: rgba(10,14,26,0.92); border: 1px solid rgba(74,158,255,0.35);
+            border-radius: 7px; padding: 5px 8px 5px 14px; font-size: 12px; color: #4A9EFF;
+            pointer-events: auto; z-index: 190; display: none; backdrop-filter: blur(8px);
+            white-space: nowrap; align-items: center; gap: 10px;
+        }
+        #measureCancelBtn {
+            background: rgba(255,80,80,0.12); border: 1px solid rgba(255,80,80,0.35);
+            border-radius: 5px; padding: 2px 9px; font-size: 11px; color: #ff6b6b;
+            cursor: pointer; white-space: nowrap; flex-shrink: 0;
+            transition: background 0.15s, border-color 0.15s;
+            font-family: inherit; line-height: 1.6;
+        }
+        #measureCancelBtn:hover {
+            background: rgba(255,80,80,0.25); border-color: rgba(255,80,80,0.6);
+        }
+
+        /* 标注面板 */
+        #annotationPanel {
+            position: absolute; top: 58px; right: 70px; z-index: 195;
+            background: rgba(16,20,32,0.95); border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 9px; padding: 12px 14px; width: 200px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4); display: none;
+        }
+        #annotationPanel.open { display: block; }
+        #annotationPanel h4 { font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom: 8px; font-weight: 500; }
+        .ann-row { display: flex; gap: 6px; margin-bottom: 6px; }
+        .ann-input {
+            flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 5px; padding: 5px 8px; font-size: 11px; color: #e0e4ec;
+            outline: none; font-family: inherit;
+        }
+        .ann-input::placeholder { color: rgba(255,255,255,0.25); }
+        .ann-colors { display: flex; gap: 5px; margin-bottom: 8px; }
+        .ann-color {
+            width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+            border: 2px solid transparent; transition: all 0.15s; flex-shrink: 0;
+        }
+        .ann-color.sel { border-color: #fff; transform: scale(1.15); }
+        .ann-list { max-height: 130px; overflow-y: auto; margin-top: 4px; }
+        .ann-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 11px; color: rgba(255,255,255,0.55); border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .ann-item:last-child { border-bottom: none; }
+        .ann-item .ann-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .ann-item .ann-text { flex: 1; word-break: break-all; }
+        .ann-item .ann-del { cursor: pointer; color: rgba(255,80,80,0.5); padding: 2px; transition: color 0.15s; flex-shrink: 0; }
+        .ann-item .ann-del:hover { color: #ff5050; }
+
+        /* ===================== 底部状态栏 ===================== */
+        #statusBar {
+            position: absolute; bottom: 0; left: 0; right: 0; height: 30px;
+            display: flex; align-items: center;
+            background: rgba(10,14,26,0.92); backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(255,255,255,0.06);
+            z-index: 200; padding: 0; overflow: hidden;
+        }
+        .sb-item {
+            display: flex; align-items: center; gap: 5px;
+            padding: 0 14px; height: 100%; flex-shrink: 0;
+            border-right: 1px solid rgba(255,255,255,0.05); font-size: 11px;
+        }
+        .sb-item svg { width: 11px; height: 11px; color: rgba(255,255,255,0.25); flex-shrink: 0; }
+        .sb-label { color: rgba(255,255,255,0.28); white-space: nowrap; }
+        .sb-val { color: rgba(255,255,255,0.65); font-variant-numeric: tabular-nums; font-family: 'Consolas','Courier New',monospace; font-size: 11px; white-space: nowrap; }
+
+        /* 比例尺 */
+        #scaleBar { display: flex; align-items: center; gap: 7px; padding: 0 14px; border-right: 1px solid rgba(255,255,255,0.05); height: 100%; flex-shrink: 0; }
+        #scaleBarLine { position: relative; height: 7px; }
+        #scaleBarLine::before,
+        #scaleBarLine::after { content: ''; position: absolute; top: 0; width: 1px; height: 100%; background: rgba(74,158,255,0.7); }
+        #scaleBarLine::before { left: 0; }
+        #scaleBarLine::after { right: 0; }
+        #scaleBarInner { position: absolute; bottom: 0; left: 0; right: 0; height: 1px; background: rgba(74,158,255,0.7); }
+        #scaleBarText { font-size: 10px; color: rgba(255,255,255,0.45); white-space: nowrap; }
+
+        /* 色带 */
+        #colorRampBar {
+            display: flex; align-items: center; gap: 5px;
+            padding: 0 14px; margin-left: auto; height: 100%;
+            border-left: 1px solid rgba(255,255,255,0.05);
+        }
+        #colorRampBar .cr-min, #colorRampBar .cr-max {
+            font-size: 10px; color: rgba(255,255,255,0.35);
+            font-variant-numeric: tabular-nums; font-family: 'Consolas','Courier New',monospace;
+            white-space: nowrap;
+        }
+        .cr-end-swatch {
+            width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.18); display: inline-block;
+        }
+        .cr-end-label {
+            font-size: 10px; color: rgba(255,255,255,0.45); white-space: nowrap;
+            letter-spacing: 0.03em;
+        }
+        #colorRampGradient {
+            width: 110px; height: 10px; border-radius: 3px; flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,0.08); margin: 0 3px;
+        }
+
+        /* 让 cesiumContainer 留出顶栏和底栏空间 */
+        #cesiumContainer { position: absolute; top: 46px; bottom: 30px; left: 0; right: 0; width: auto; height: auto; }
+
+        /* 右侧栏和浮动元素的位置微调（顶部46px已推移） */
+        #rightSidebar { top: calc(50% + 23px); }
+
+        /* 折线图、区域统计浮层往上推，避免被底栏遮住 */
+        #lineChartContainer { bottom: 46px; }
+        #regionStatsFloating { bottom: 46px; }
+        .click-info-box { bottom: 46px; }
+
+        /* ===================== 白天模式（light theme） ===================== */
+        html[data-theme="light"] body { background: #e8eef8; }
+
+        /* 顶部工具栏 */
+        html[data-theme="light"] #topToolbar {
+            background: rgba(255, 255, 255, 0.96);
+            border-bottom: 1px solid rgba(0,0,0,0.10);
+            box-shadow: 0 2px 16px rgba(0,0,0,0.12);
+        }
+        html[data-theme="light"] #topToolbar .tb-logo { color: #1a6fcf; border-right-color: rgba(0,0,0,0.10); }
+        html[data-theme="light"] #topToolbar .tb-sep { background: rgba(0,0,0,0.10); }
+        html[data-theme="light"] #topToolbar .tb-label { color: rgba(0,0,0,0.4); }
+
+        /* 底图切换按钮 */
+        html[data-theme="light"] .bm-btn { color: rgba(0,0,0,0.55); }
+        html[data-theme="light"] .bm-btn:hover { background: rgba(0,0,0,0.07); color: #1a2035; }
+        html[data-theme="light"] .bm-btn.active {
+            background: rgba(26,111,207,0.14);
+            border-color: rgba(26,111,207,0.50);
+            color: #1a6fcf;
+        }
+
+        /* 工具图标按钮 */
+        html[data-theme="light"] .tool-btn { color: rgba(0,0,0,0.5); }
+        html[data-theme="light"] .tool-btn:hover { background: rgba(0,0,0,0.07); color: #1a2035; border-color: rgba(0,0,0,0.12); }
+        html[data-theme="light"] .tool-btn.active { background: rgba(26,111,207,0.14); border-color: rgba(26,111,207,0.50); color: #1a6fcf; }
+        html[data-theme="light"] .tool-btn .tb-tooltip {
+            background: rgba(255,255,255,0.98);
+            border-color: rgba(0,0,0,0.12);
+            color: #2c3a55;
+        }
+
+        /* 缩放值 */
+        html[data-theme="light"] .zoom-val { color: rgba(0,0,0,0.45); }
+
+        /* 测量下拉 */
+        html[data-theme="light"] .measure-dropdown {
+            background: rgba(255,255,255,0.98);
+            border-color: rgba(0,0,0,0.12);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+        html[data-theme="light"] .mdd-item { color: rgba(0,0,0,0.6); }
+        html[data-theme="light"] .mdd-item:hover { background: rgba(26,111,207,0.10); color: #1a2035; }
+        html[data-theme="light"] .mdd-item.active { color: #1a6fcf; background: rgba(26,111,207,0.08); }
+
+        /* 地形夸张系数输入框 */
+        html[data-theme="light"] #tbExagInput {
+            background: rgba(0,0,0,0.05);
+            border-color: rgba(0,0,0,0.14);
+            color: #1a2035;
+        }
+        html[data-theme="light"] #tbExagInput:focus { border-color: rgba(26,111,207,0.6); background: rgba(26,111,207,0.05); }
+        html[data-theme="light"] .tb-exag-unit { color: rgba(0,0,0,0.35); }
+
+        /* 搜索框 */
+        html[data-theme="light"] #tbSearchWrap {
+            background: rgba(0,0,0,0.05);
+            border-color: rgba(0,0,0,0.12);
+        }
+        html[data-theme="light"] #tbSearchWrap:focus-within { border-color: rgba(26,111,207,0.6); background: rgba(26,111,207,0.05); }
+        html[data-theme="light"] #tbSearchWrap svg { color: rgba(0,0,0,0.35); }
+        html[data-theme="light"] #tbSearchInput { color: #1a2035; }
+        html[data-theme="light"] #tbSearchInput::placeholder { color: rgba(0,0,0,0.3); }
+
+        /* 左侧面板 */
+        html[data-theme="light"] #leftPanel {
+            background: rgba(248, 251, 255, 0.97);
+            border-right: 1px solid rgba(0,0,0,0.09);
+            color: #1a2035;
+            box-shadow: 2px 0 30px rgba(0,0,0,0.12);
+        }
+        html[data-theme="light"] #leftPanel .panel-header { border-bottom-color: rgba(0,0,0,0.08); }
+        html[data-theme="light"] #leftPanel .panel-header h2 { color: #1a2035; }
+        html[data-theme="light"] #leftPanel .panel-header .close-btn {
+            background: rgba(0,0,0,0.06);
+            color: rgba(0,0,0,0.45);
+        }
+        html[data-theme="light"] #leftPanel .panel-header .close-btn:hover { background: rgba(255,80,80,0.15); color: #cc2222; }
+        html[data-theme="light"] #leftPanel .panel-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); }
+
+        /* Accordion */
+        html[data-theme="light"] .accordion { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.07); }
+        html[data-theme="light"] .accordion-header { color: #2c3a55; }
+        html[data-theme="light"] .accordion-header:hover { background: rgba(0,0,0,0.04); }
+        html[data-theme="light"] .accordion-header .arrow { color: rgba(0,0,0,0.25); }
+
+        /* 表单 */
+        html[data-theme="light"] .form-group label { color: rgba(0,0,0,0.55); }
+        html[data-theme="light"] .form-group .hint { color: rgba(0,0,0,0.35); }
+
+        /* 按钮 */
+        html[data-theme="light"] .btn-ghost { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.65); }
+        html[data-theme="light"] .btn-ghost:hover { background: rgba(0,0,0,0.12); color: #1a2035; }
+
+        /* 文件上传区 */
+        html[data-theme="light"] .file-upload-zone {
+            border-color: rgba(0,0,0,0.14);
+            background: rgba(0,0,0,0.02);
+        }
+        html[data-theme="light"] .file-upload-zone:hover, html[data-theme="light"] .file-upload-zone.dragover {
+            border-color: #1a6fcf;
+            background: rgba(26,111,207,0.05);
+        }
+        html[data-theme="light"] .file-upload-zone .icon { color: rgba(0,0,0,0.2); }
+        html[data-theme="light"] .file-upload-zone .text { color: rgba(0,0,0,0.45); }
+        html[data-theme="light"] .file-upload-zone .formats { color: rgba(0,0,0,0.28); }
+
+        /* 文件信息 */
+        html[data-theme="light"] .file-info { background: rgba(26,111,207,0.08); }
+        html[data-theme="light"] .file-info .name { color: #1a6fcf; }
+        html[data-theme="light"] .file-info .remove { color: rgba(0,0,0,0.3); }
+        html[data-theme="light"] .file-info .remove:hover { color: #cc2222; }
+
+        /* 数据集列表 */
+        html[data-theme="light"] .dataset-item { background: rgba(0,0,0,0.02); }
+        html[data-theme="light"] .dataset-item:hover { background: rgba(0,0,0,0.05); }
+        html[data-theme="light"] .dataset-item .vis-toggle { border-color: rgba(0,0,0,0.22); }
+        html[data-theme="light"] .dataset-item .vis-toggle.visible { background: #1a6fcf; border-color: #1a6fcf; }
+        html[data-theme="light"] .dataset-item .info .name { color: #2c3a55; }
+        html[data-theme="light"] .dataset-item .info .meta { color: rgba(0,0,0,0.38); }
+        html[data-theme="light"] .dataset-item .del-btn { color: rgba(0,0,0,0.22); }
+        html[data-theme="light"] .dataset-item .del-btn:hover { background: rgba(255,80,80,0.15); color: #cc2222; }
+        html[data-theme="light"] .empty-state { color: rgba(0,0,0,0.28); }
+
+        /* LOD 信息 */
+        html[data-theme="light"] .lod-info .row { border-bottom-color: rgba(0,0,0,0.05); }
+        html[data-theme="light"] .lod-info .row .key { color: rgba(0,0,0,0.42); }
+        html[data-theme="light"] .lod-info .row .val { color: #2c3a55; }
+        html[data-theme="light"] .lod-info .row .val.active-level { color: #1a6fcf; }
+        html[data-theme="light"] .lod-bar { background: rgba(0,0,0,0.07); }
+        html[data-theme="light"] .lod-bar .segment.inactive { background: rgba(0,0,0,0.10); }
+        html[data-theme="light"] .lod-bar .segment-indicator { border-color: rgba(248,251,255,0.9); }
+        html[data-theme="light"] .lod-labels span { color: rgba(0,0,0,0.32); }
+
+        /* 统计卡片 */
+        html[data-theme="light"] .stat-card { background: rgba(0,0,0,0.03); }
+        html[data-theme="light"] .stat-card .num { color: #1a2035; }
+        html[data-theme="light"] .stat-card .lbl { color: rgba(0,0,0,0.42); }
+
+        /* 滑块 */
+        html[data-theme="light"] .slider-row .val { color: #1a6fcf; }
+        html[data-theme="light"] input[type="range"] { background: rgba(0,0,0,0.12); }
+        html[data-theme="light"] input[type="range"]::-webkit-slider-thumb { background: #1a6fcf; border-color: rgba(248,251,255,0.9); }
+
+        /* 开关行 */
+        html[data-theme="light"] .switch-row { border-bottom-color: rgba(0,0,0,0.05); }
+        html[data-theme="light"] .switch-row .label { color: #2c3a55; }
+        html[data-theme="light"] .switch-row .hint { color: rgba(0,0,0,0.32); }
+        html[data-theme="light"] .toggle-switch { background: rgba(0,0,0,0.12); }
+        html[data-theme="light"] .toggle-switch.active { background: #1a6fcf; }
+
+        /* 选项卡栏 */
+        html[data-theme="light"] .tab-bar { background: rgba(0,0,0,0.05); }
+        html[data-theme="light"] .tab-bar .tab { color: rgba(0,0,0,0.4); }
+        html[data-theme="light"] .tab-bar .tab.active { background: rgba(26,111,207,0.18); color: #1a6fcf; }
+
+        /* 色阶选择 */
+        html[data-theme="light"] .blend-select { background: rgba(0,0,0,0.05); color: #2c3a55; border-color: rgba(0,0,0,0.12); }
+        html[data-theme="light"] .blend-select option { background: #f5f8ff; color: #2c3a55; }
+
+        /* 分析结果 */
+        html[data-theme="light"] .analysis-result { background: rgba(0,0,0,0.03); }
+        html[data-theme="light"] .analysis-result .row .key { color: rgba(0,0,0,0.42); }
+        html[data-theme="light"] .analysis-result .row .val { color: #2c3a55; }
+
+        /* 右侧边栏 */
+        html[data-theme="light"] #rightSidebar {
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(0,0,0,0.09);
+            box-shadow: -2px 0 20px rgba(0,0,0,0.10);
+        }
+        html[data-theme="light"] #rightSidebar .module-btn { color: rgba(0,0,0,0.48); }
+        html[data-theme="light"] #rightSidebar .module-btn:hover { background: rgba(26,111,207,0.12); color: #1a2035; }
+        html[data-theme="light"] #rightSidebar .module-btn.active { background: rgba(26,111,207,0.18); color: #1a6fcf; box-shadow: inset 0 0 0 1px rgba(26,111,207,0.35); }
+
+        /* 底部状态栏 */
+        html[data-theme="light"] #statusBar {
+            background: rgba(255, 255, 255, 0.95);
+            border-top: 1px solid rgba(0,0,0,0.09);
+        }
+        html[data-theme="light"] .sb-item { border-right-color: rgba(0,0,0,0.07); }
+        html[data-theme="light"] .sb-item svg { color: rgba(0,0,0,0.28); }
+        html[data-theme="light"] .sb-label { color: rgba(0,0,0,0.38); }
+        html[data-theme="light"] .sb-val { color: rgba(0,0,0,0.70); }
+        html[data-theme="light"] #scaleBar { border-right-color: rgba(0,0,0,0.07); }
+        html[data-theme="light"] #scaleBarLine::before, html[data-theme="light"] #scaleBarLine::after { background: rgba(26,111,207,0.75); }
+        html[data-theme="light"] #scaleBarInner { background: rgba(26,111,207,0.75); }
+        html[data-theme="light"] #scaleBarText { color: rgba(0,0,0,0.48); }
+        html[data-theme="light"] #colorRampBar { border-left-color: rgba(0,0,0,0.07); }
+        html[data-theme="light"] #colorRampBar .cr-min, html[data-theme="light"] #colorRampBar .cr-max { color: rgba(0,0,0,0.38); }
+        html[data-theme="light"] .cr-end-swatch { border-color: rgba(0,0,0,0.18); }
+        html[data-theme="light"] .cr-end-label { color: rgba(0,0,0,0.50); }
+        html[data-theme="light"] #colorRampGradient { border-color: rgba(0,0,0,0.12); }
+
+        /* 折线图容器 */
+        html[data-theme="light"] #lineChartContainer {
+            background: rgba(255, 255, 255, 0.97);
+            border-color: rgba(0,0,0,0.09);
+            box-shadow: -2px 0 20px rgba(0,0,0,0.10);
+        }
+        html[data-theme="light"] #lineChartHeader { border-bottom-color: rgba(0,0,0,0.07); color: #2c3a55; }
+        html[data-theme="light"] #lineChartCloseBtn { color: rgba(0,0,0,0.35); }
+        html[data-theme="light"] #lineChartCloseBtn:hover { background: rgba(255,80,80,0.12); color: #cc2222; }
+
+        /* 区域统计浮层 */
+        html[data-theme="light"] #regionStatsFloating {
+            background: rgba(255, 255, 255, 0.97);
+            border-color: rgba(0,0,0,0.09);
+            box-shadow: -2px 0 20px rgba(0,0,0,0.12);
+            color: #2c3a55;
+        }
+        html[data-theme="light"] #regionStatsFloating .rsf-title { color: rgba(0,0,0,0.65); border-bottom-color: rgba(0,0,0,0.07); }
+        html[data-theme="light"] #regionStatsFloating .rsf-row .rsf-label { color: rgba(0,0,0,0.42); }
+        html[data-theme="light"] #regionStatsFloating .rsf-row .rsf-value.neutral { color: #2c3a55; }
+        html[data-theme="light"] #regionStatsFloating .rsf-divider { background: rgba(0,0,0,0.06); }
+        html[data-theme="light"] #regionStatsFloating .rsf-count { color: rgba(0,0,0,0.32); border-top-color: rgba(0,0,0,0.05); }
+
+        /* 点击信息框 */
+        html[data-theme="light"] .click-info-box {
+            background: rgba(255, 255, 255, 0.97);
+            border-color: rgba(0,0,0,0.09);
+            color: #2c3a55;
+        }
+
+        /* 测量提示 */
+        html[data-theme="light"] #measureTip {
+            background: rgba(255,255,255,0.95);
+            border-color: rgba(26,111,207,0.45);
+            color: #1a6fcf;
+        }
+        html[data-theme="light"] #measureCancelBtn {
+            background: rgba(255,80,80,0.10);
+            border-color: rgba(255,80,80,0.35);
+            color: #cc2222;
+        }
+        html[data-theme="light"] #measureCancelBtn:hover {
+            background: rgba(255,80,80,0.22);
+            border-color: rgba(255,80,80,0.55);
+        }
+
+        /* 标注面板 */
+        html[data-theme="light"] #annotationPanel {
+            background: rgba(255,255,255,0.98);
+            border-color: rgba(0,0,0,0.10);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+        html[data-theme="light"] #annotationPanel h4 { color: rgba(0,0,0,0.58); }
+        html[data-theme="light"] .ann-input {
+            background: rgba(0,0,0,0.05);
+            border-color: rgba(0,0,0,0.12);
+            color: #1a2035;
+        }
+        html[data-theme="light"] .ann-input::placeholder { color: rgba(0,0,0,0.3); }
+        html[data-theme="light"] .ann-item { color: rgba(0,0,0,0.55); border-bottom-color: rgba(0,0,0,0.05); }
+        html[data-theme="light"] .ann-item .ann-del { color: rgba(255,80,80,0.45); }
+        html[data-theme="light"] .ann-item .ann-del:hover { color: #cc2222; }
+
+        /* 漫游模式 */
+        html[data-theme="light"] .roam-card {
+            background: rgba(0,0,0,0.02);
+            border-color: rgba(0,0,0,0.07);
+        }
+        html[data-theme="light"] .roam-card:hover { background: rgba(26,111,207,0.07); border-color: rgba(26,111,207,0.2); }
+        html[data-theme="light"] .roam-card.active { background: rgba(26,111,207,0.10); border-color: #1a6fcf; }
+        html[data-theme="light"] .roam-card .icon { background: rgba(0,0,0,0.04); }
+        html[data-theme="light"] .roam-card .name { color: #1a2035; }
+        html[data-theme="light"] .roam-card .desc { color: rgba(0,0,0,0.42); }
+        html[data-theme="light"] .roam-status { background: rgba(26,111,207,0.08); color: #1a6fcf; }
+        html[data-theme="light"] .waypoint-item { background: rgba(0,0,0,0.02); }
+        html[data-theme="light"] .waypoint-item .coords { color: rgba(0,0,0,0.55); }
+        html[data-theme="light"] .waypoint-item .remove-wp { color: rgba(0,0,0,0.25); }
+        html[data-theme="light"] .waypoint-item .remove-wp:hover { color: #cc2222; }
+
+        /* 特征列表 */
+        html[data-theme="light"] .feat-item { color: rgba(0,0,0,0.58); border-bottom-color: rgba(0,0,0,0.04); }
+        html[data-theme="light"] .feat-item:hover { background: rgba(26,111,207,0.08); color: #2c3a55; }
+        html[data-theme="light"] .feat-item .feat-code { color: rgba(0,0,0,0.22); }
+        html[data-theme="light"] .feat-item .feat-badge { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.32); }
+
+        /* 图层列表 */
+        html[data-theme="light"] .layer-item { background: rgba(0,0,0,0.02); }
+        html[data-theme="light"] .layer-item .info .name { color: #2c3a55; }
+        html[data-theme="light"] .layer-item .info .desc { color: rgba(0,0,0,0.32); }
+
+        /* 异常检测图例 */
+        html[data-theme="light"] .anomaly-legend .dot.normal { background: rgba(0,0,0,0.22); }
+
+        /* 边界信息 */
+        html[data-theme="light"] .boundary-info { background: rgba(26,111,207,0.06); color: rgba(0,0,0,0.60); }
+
+        /* 时间轴控制 */
+        html[data-theme="light"] .time-control .time-btn { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.65); }
+        html[data-theme="light"] .time-control .time-btn:hover { background: rgba(26,111,207,0.15); color: #1a6fcf; }
+        html[data-theme="light"] .time-control .time-btn.active { background: rgba(255,60,60,0.15); color: #cc2222; }
+        html[data-theme="light"] .time-label { color: #1a6fcf; }
+
+        /* 已加载文件面板 */
+        html[data-theme="light"] .loaded-files-panel { background: rgba(26,111,207,0.06); border-left-color: #1a6fcf; }
+        html[data-theme="light"] .loaded-files-title { color: rgba(0,0,0,0.65); }
+        html[data-theme="light"] .loaded-file-item { color: #1a6fcf; }
+
+        /* 向量地图按钮 */
+        html[data-theme="light"] .vector-map-btn.loaded { background: rgba(26,111,207,0.12) !important; color: #1a6fcf !important; }
+        html[data-theme="light"] .vector-map-btn.active-map { background: #1a6fcf !important; color: #fff !important; }
+
+        /* 进度条 */
+        html[data-theme="light"] .progress-bar { background: rgba(0,0,0,0.07); }
+        html[data-theme="light"] .progress-bar .fill { background: linear-gradient(90deg, #1a6fcf, #5299e0); }
+    </style>
+</head>
+<body>
+
+    <!-- ===================== 顶部工具栏 ===================== -->
+    <div id="topToolbar">
+        <div class="tb-logo">🌍 InSAR</div>
+
+        <!-- 底图切换 -->
+        <span class="tb-label">底图</span>
+        <div class="tb-group" id="basemapGroup">
+            <button class="bm-btn active" data-bm="satellite" id="bm-satellite">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="1.5" width="13" height="13" rx="2"/><path d="M1.5 5.5h13M1.5 10.5h13M5.5 1.5v13M10.5 1.5v13" stroke-opacity=".5"/></svg>
+                卫星
+            </button>
+            <button class="bm-btn" data-bm="terrain" id="bm-terrain">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 13L5.5 5l3.5 5 2.5-4L15 13H1z"/></svg>
+                地形
+            </button>
+            <button class="bm-btn" data-bm="street" id="bm-street">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1v14M3 4h10M3 12h10"/><path d="M3 8h4M9 8h4" stroke-opacity=".6"/></svg>
+                街道
+            </button>
+        </div>
+
+        <div class="tb-sep"></div>
+
+        <!-- 缩放 -->
+        <span class="tb-label">缩放</span>
+        <div class="zoom-group">
+            <button class="tool-btn" id="tbZoomOut" title="">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M5 7h4M10.5 10.5l3 3"/></svg>
+                <span class="tb-tooltip">缩小</span>
+            </button>
+            <span class="zoom-val" id="tbZoomVal">--</span>
+            <button class="tool-btn" id="tbZoomIn" title="">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M5 7h4M7 5v4M10.5 10.5l3 3"/></svg>
+                <span class="tb-tooltip">放大</span>
+            </button>
+        </div>
+
+        <div class="tb-sep"></div>
+
+        <!-- 测量 -->
+        <span class="tb-label">测量</span>
+        <div class="measure-wrap">
+            <button class="tool-btn" id="tbMeasureBtn" title="">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14L14 2"/><path d="M2 14h3.5M2 14v-3.5"/><path d="M14 2H10.5M14 2v3.5"/><path d="M5 11l2-2M9 7l2-2" stroke-opacity=".6"/></svg>
+                <span class="tb-tooltip">测量工具</span>
+            </button>
+            <div class="measure-dropdown" id="measureDropdown">
+                <div class="mdd-item active" data-measure="distance" id="mdd-distance">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14L14 2"/><circle cx="2" cy="14" r="1.5" fill="currentColor" stroke="none"/><circle cx="14" cy="2" r="1.5" fill="currentColor" stroke="none"/></svg>
+                    距离测量
+                </div>
+                <div class="mdd-item" data-measure="area" id="mdd-area">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2h12v12H2z"/><path d="M2 2l12 12" stroke-opacity=".35"/></svg>
+                    面积测量
+                </div>
+            </div>
+        </div>
+
+        <div class="tb-sep"></div>
+
+        <!-- 标注 -->
+        <span class="tb-label">标注</span>
+        <button class="tool-btn" id="tbAnnotateBtn" title="">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13l2.5-1 7-7a1.5 1.5 0 00-2-2l-7 7L3 13z"/><path d="M9 4l3 3" stroke-opacity=".6"/></svg>
+            <span class="tb-tooltip">添加标注</span>
+        </button>
+
+        <div class="tb-sep"></div>
+
+        <!-- 截图 -->
+        <span class="tb-label">截图</span>
+        <button class="tool-btn" id="tbScreenshotBtn" title="">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3.5" width="13" height="10" rx="1.5"/><circle cx="8" cy="8.5" r="2.5"/><path d="M5.5 3.5V3a1 1 0 011-1h3a1 1 0 011 1v.5"/></svg>
+            <span class="tb-tooltip">截图保存</span>
+        </button>
+
+        <div class="tb-sep"></div>
+
+        <!-- 重置视图 -->
+        <span class="tb-label">视图</span>
+        <button class="tool-btn" id="tbResetViewBtn">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="8" cy="8" r="2.2"/>
+            </svg>
+            <span class="tb-tooltip">缩放到数据范围（正射视角）</span>
+        </button>
+
+        <div class="tb-sep"></div>
+
+        <!-- 地形垂向夸张系数 -->
+        <span class="tb-label">地形垂向夸张系数</span>
+        <div class="tb-exag-wrap">
+            <input type="number" id="tbExagInput" value="1" min="1" max="1000" step="1" title="地形垂向夸张系数（1–1000），回车确认">
+            <span class="tb-exag-unit">×</span>
+        </div>
+
+        <div class="tb-sep"></div>
+
+        <!-- 搜索框 -->
+        <div id="tbSearchWrap">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3.5 3.5"/></svg>
+            <input type="text" id="tbSearchInput" placeholder="搜索地名 / 坐标…" autocomplete="off">
+        </div>
+
+        <div class="tb-sep"></div>
+
+        <!-- 主题切换 -->
+        <button class="tool-btn" id="tbThemeToggle" title="">
+            <!-- 暗夜模式图标（月亮，当前白天模式时显示，点击可切换到暗夜） -->
+            <svg id="themeIconMoon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="display:none;">
+                <path d="M13.5 10A5.5 5.5 0 016 2.5a5.5 5.5 0 100 11 5.5 5.5 0 007.5-3.5z"/>
+            </svg>
+            <!-- 白天模式图标（太阳，当前暗夜模式时显示，点击可切换到白天） -->
+            <svg id="themeIconSun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="8" cy="8" r="3"/>
+                <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.22 3.22l1.41 1.41M11.37 11.37l1.41 1.41M3.22 12.78l1.41-1.41M11.37 4.63l1.41-1.41" stroke-linecap="round"/>
+            </svg>
+            <span class="tb-tooltip" id="themeTooltip">切换至白天模式</span>
+        </button>
+    </div>
+
+    <!-- 测量提示条 -->
+    <div id="measureTip">
+        <span id="measureTipText">📐 点击地图开始测量，双击结束</span>
+        <button id="measureCancelBtn">✕ 取消测量</button>
+    </div>
+
+    <!-- 标注面板 -->
+    <div id="annotationPanel">
+        <h4>✏️ 添加标注</h4>
+        <div class="ann-row">
+            <input class="ann-input" id="annTextInput" placeholder="输入标注文字…" maxlength="40">
+        </div>
+        <div class="ann-colors" id="annColorPicker">
+            <div class="ann-color sel" data-color="#4A9EFF" style="background:#4A9EFF;"></div>
+            <div class="ann-color" data-color="#ff6b6b" style="background:#ff6b6b;"></div>
+            <div class="ann-color" data-color="#4cdb8a" style="background:#4cdb8a;"></div>
+            <div class="ann-color" data-color="#ffc44d" style="background:#ffc44d;"></div>
+            <div class="ann-color" data-color="#e879f9" style="background:#e879f9;"></div>
+        </div>
+        <div class="ann-row">
+            <button class="btn btn-primary btn-sm" id="annConfirmBtn" style="flex:1;justify-content:center;">📌 点击地图放置</button>
+            <button class="btn btn-ghost btn-sm" id="annCancelBtn">取消</button>
+        </div>
+        <div class="ann-list" id="annList"></div>
+    </div>
+
+    <div id="cesiumContainer"></div>
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ===================== 底部状态栏 ===================== -->
+    <div id="statusBar">
+        <!-- 鼠标坐标 -->
+        <div class="sb-item">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2" stroke-linecap="round"/></svg>
+            <span class="sb-label">经度</span>
+            <span class="sb-val" id="sbLng">—</span>
+            <span class="sb-label" style="margin-left:8px;">纬度</span>
+            <span class="sb-val" id="sbLat">—</span>
+            <span class="sb-label" style="margin-left:8px;">高程</span>
+            <span class="sb-val" id="sbAlt">—</span>
+        </div>
+
+        <!-- 比例尺 -->
+        <div id="scaleBar">
+            <div id="scaleBarLine" style="width:80px;">
+                <div id="scaleBarInner"></div>
+            </div>
+            <span id="scaleBarText">—</span>
+        </div>
+
+        <!-- 色带 -->
+        <div id="colorRampBar">
+            <span class="cr-end-swatch" id="crSwatchMin"></span>
+            <span class="cr-end-label">沉降</span>
+            <span class="cr-min" id="crMin">—</span>
+            <div id="colorRampGradient"></div>
+            <span class="cr-max" id="crMax">—</span>
+            <span class="cr-end-label">抬升</span>
+            <span class="cr-end-swatch" id="crSwatchMax"></span>
+        </div>
+    </div>
+
+    <!-- 交互分析浮动元素 -->
+    <div class="click-info-box" id="clickInfoBox"></div>
+    <div id="lineChartContainer">
+        <div id="lineChartHeader">
+            <span>📈 时间序列形变</span>
+            <button id="lineChartCloseBtn">✕</button>
+        </div>
+        <canvas id="lineChartCanvas"></canvas>
+    </div>
+    <div id="regionStatsFloating">
+        <div class="rsf-title">📊 区域形变统计</div>
+        <div class="rsf-row"><span class="rsf-label">平均形变</span><span class="rsf-value neutral" id="rsfMean">—</span></div>
+        <div class="rsf-row"><span class="rsf-label">最大沉降</span><span class="rsf-value down" id="rsfMin">—</span></div>
+        <div class="rsf-row"><span class="rsf-label">最大抬升</span><span class="rsf-value up" id="rsfMax">—</span></div>
+        <div class="rsf-count" id="rsfInfo">区域内点数: 0</div>
+    </div>
+
+    <div id="rightSidebar">
+        <button class="module-btn active" data-module="data" title="数据管理"><span class="icon">📂</span><span class="label">数据管理</span></button>
+        <button class="module-btn" data-module="analysis" title="交互分析"><span class="icon">📊</span><span class="label">交互分析</span></button>
+        <button class="module-btn" data-module="roam" title="漫游模式"><span class="icon">🎬</span><span class="label">漫游</span></button>
+    </div>
+
+    <div id="leftPanel" class="open">
+        <div class="panel-header">
+            <h2 id="panelTitle"><span class="module-icon">📂</span>数据管理</h2>
+            <button class="close-btn" id="closePanelBtn">✕</button>
+        </div>
+        <div class="panel-body">
+
+            <!-- ======== MODULE: 数据管理 ======== -->
+            <div class="module-content active" id="module-data">
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-load">
+                        <span>📥 数据加载与处理</span>
+                        <span class="arrow open">▶</span>
+                    </div>
+                    <div class="accordion-body open" id="s-load">
+                        <div class="form-group">
+                            <label>上传数据文件（支持多文件）</label>
+                            <div class="file-upload-zone" id="fileDropZone">
+                                <div class="icon">📄</div>
+                                <div class="text">点击选择或拖拽文件到此处</div>
+                                <div class="formats">JSON · GeoJSON · CSV</div>
+                            </div>
+                            <input type="file" id="fileInput" accept=".json,.geojson,.csv" style="display:none" multiple>
+                            <div id="fileInfoContainer"></div>
+                            <div id="loadedFilesPanel" class="loaded-files-panel" style="display: none;">
+                                <div class="loaded-files-title">✅ 已读取文件：</div>
+                                <div id="loadedFilesList"></div>
+                            </div>
+                        </div>
+                        <div class="form-group" id="terrainSamplingGroup" style="display:none;">
+                            <label><input type="checkbox" id="enableTerrainSampling" checked> 地形采样（Cesium 地形服务获取高程）</label>
+                        </div>
+                        <div class="form-group" id="dataValidationGroup" style="display:none;">
+                            <label><input type="checkbox" id="enableValidation" checked> 数据验证（自动过滤无效数据点）</label>
+                        </div>
+                        <div id="dataPreview" style="display:none;">
+                            <div class="stats-grid" id="statsGrid"></div>
+                        </div>
+                        <div id="actionButtons" style="display:none;margin-top:10px;">
+                            <button class="btn btn-primary" id="loadDataBtn" style="width:100%;justify-content:center;">⚡ 加载至地图</button>
+                            <div style="display:flex;gap:6px;margin-top:6px;">
+                                <button class="btn btn-ghost btn-sm" id="batchLoadBtn" style="flex:1;justify-content:center;">📦 批量加载</button>
+                                <button class="btn btn-danger btn-sm" id="clearAllBtn" style="flex:1;justify-content:center;">🗑️ 清空</button>
+                            </div>
+                        </div>
+                        <div id="loadProgress" style="display:none;margin-top:10px;">
+                            <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.5);">
+                                <span id="progressText">处理中...</span>
+                                <span id="progressPercent">0%</span>
+                            </div>
+                            <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+                        </div>
+
+                        <div id="datasetListContainer" style="margin-top:10px;">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;display:block;">已加载数据集</label>
+                            <div id="datasetList" class="dataset-list"></div>
+                        </div>
+
+                        <div id="visControls" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;display:block;">🎨 点云显示控制</label>
+                            <div class="switch-row">
+                                <div><div class="label">显示点云</div><div class="hint">切换点云可见性</div></div>
+                                <div class="toggle-switch active" id="togglePointCloud"><div class="knob"></div></div>
+                            </div>
+                            <!-- 全密度模式开关 -->
+<div class="vis-row" style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.08);">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <input type="checkbox" id="fullDensityToggle">
+        <span style="font-size:12px;">全密度模式（关闭 LOD,显示全部点）</span>
+    </label>
+    <div id="fullDensityHint" style="font-size:11px; color:#999; margin-top:4px; display:none;">
+        ⚠ 已开启:当前帧将显示全部点,远视角可能略卡
+    </div>
+</div>
+<!-- 速率范围 + 色标条 -->
+<div class="vis-row" style="margin-top:10px; padding:8px; background:rgba(255,255,255,0.03); border-radius:6px;">
+    <div style="font-size:12px; font-weight:bold; margin-bottom:6px; color:#ddd;">速率范围 (mm/yr)</div>
+    
+    <div style="display:flex; gap:4px; align-items:center; margin-bottom:8px;">
+        <input type="number" id="colorMinInput" value="-10" step="0.5" 
+               style="width:60px; padding:2px 4px; background:#1a1d28; color:#fff; border:1px solid #444; border-radius:3px; font-size:11px;">
+        <span style="color:#888; font-size:11px;">~</span>
+        <input type="number" id="colorMaxInput" value="10" step="0.5"
+               style="width:60px; padding:2px 4px; background:#1a1d28; color:#fff; border:1px solid #444; border-radius:3px; font-size:11px;">
+        <button id="applyColorRange" 
+                style="padding:2px 8px; background:#2E74B5; color:#fff; border:none; border-radius:3px; font-size:11px; cursor:pointer;">应用</button>
+        <button id="resetColorRange" 
+                style="padding:2px 8px; background:#555; color:#fff; border:none; border-radius:3px; font-size:11px; cursor:pointer;">自适应</button>
+    </div>
+    
+    <!-- 色标条 -->
+    <div style="display:flex; align-items:center; gap:6px;">
+        <span id="colorBarMinLabel" style="font-size:10px; color:#bbb; min-width:32px; text-align:right;">-10</span>
+        <div id="colorBarGradient" style="flex:1; height:12px; border-radius:6px; border:1px solid #555;
+             background: linear-gradient(to right,
+                 rgb(34, 51, 153) 0%,
+                 rgb(70, 120, 200) 25%,
+                 rgb(245, 245, 245) 50%,
+                 rgb(230, 100, 80) 75%,
+                 rgb(170, 30, 30) 100%);">
+        </div>
+        <span id="colorBarMaxLabel" style="font-size:10px; color:#bbb; min-width:32px;">10</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;font-size:10px;color:rgba(255,255,255,0.4);">
+        <span style="display:flex;align-items:center;gap:4px;">
+            <span id="colorBarSwatchMin" style="display:inline-block;width:8px;height:8px;border-radius:2px;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;"></span>
+            沉降
+        </span>
+        <span style="display:flex;align-items:center;gap:4px;">
+            抬升
+            <span id="colorBarSwatchMax" style="display:inline-block;width:8px;height:8px;border-radius:2px;border:1px solid rgba(255,255,255,0.18);flex-shrink:0;"></span>
+        </span>
+    </div>
+</div>
+                            <div class="switch-row">
+                                <div><div class="label">3D Tiles 模式</div><div class="hint">GPU 批量渲染（Cesium3DTileset），颜色变更需重建</div></div>
+                                <div class="toggle-switch" id="toggleTilesMode"><div class="knob"></div></div>
+                            </div>
+                            <div class="switch-row" style="display:none;">
+                                <div><div class="label">显示线框</div><div class="hint">地表三角网线框（上限 2000 三角，默认关闭）</div></div>
+                                <div class="toggle-switch" id="toggleWireframe"><div class="knob"></div></div>
+                            </div>
+                            <div class="form-group" style="margin-top:6px;display:none;">
+                                <label>离地高度</label>
+                                <div class="slider-row">
+                                    <input type="range" id="heightOffset" min="-50" max="50" value="0" step="1">
+                                    <span class="val" id="heightOffsetVal">0 m</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>点大小</label>
+                                <div class="slider-row">
+                                    <input type="range" id="pointSize" min="2" max="16" value="6" step="1">
+                                    <span class="val" id="pointSizeVal">6 px</span>
+                                </div>
+                            </div>
+                            <div class="vis-row" style="margin-top:8px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <span style="font-size:12px;">形变显示增强系数</span>
+                                    <span id="exaggerationValue" style="font-size:11px; color:#4A9EFF; font-weight:bold;">1×</span>
+                                </div>
+                                <input type="range" id="exaggerationSlider"
+                                       min="1" max="10000" value="1" step="100"
+                                       style="width:100%;">
+                                <div style="display:flex; justify-content:space-between; font-size:10px; color:#777;">
+                                    <span>1×</span><span>5000×</span><span>10000×</span>
+                                </div>
+                            </div>
+
+                            <div class="vis-row" style="margin-top:6px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <span style="font-size:12px;">地形垂向夸张系数</span>
+                                    <span id="terrainExagValue" style="font-size:11px; color:#4A9EFF; font-weight:bold;">1×</span>
+                                </div>
+                                <input type="range" id="terrainExagSlider"
+                                       min="1" max="10" value="1" step="0.5"
+                                       style="width:100%;">
+                            </div>
+
+                            <div class="vis-row" style="margin-top:6px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <span style="font-size:12px;">地形透明度</span>
+                                    <span id="terrainOpacityValue" style="font-size:11px; color:#4A9EFF; font-weight:bold;">65%</span>
+                                </div>
+                                <input type="range" id="terrainOpacitySlider"
+                                       min="0" max="100" value="65" step="5"
+                                       style="width:100%;">
+                                <div style="display:flex; justify-content:space-between; font-size:10px; color:#777;">
+                                    <span>全透明</span><span>不透明</span>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>色带方案</label>
+                                <div class="color-ramp-options" id="colorSchemeOpts">
+                                    <div class="color-ramp-opt" data-scheme="blue-white-red" style="background:linear-gradient(90deg,#1e3a8a,#3b82f6,#93c5fd,#fff,#fcd34d,#f97316,#dc2626);"></div>
+                                    <div class="color-ramp-opt" data-scheme="blue-green-red" style="background:linear-gradient(90deg,#1e3a8a,#22d3ee,#86efac,#fef08a,#f97316,#dc2626);"></div>
+                                    <div class="color-ramp-opt" data-scheme="viridis" style="background:linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725);"></div>
+                                    <div class="color-ramp-opt" data-scheme="thermal" style="background:linear-gradient(90deg,#0d0887,#7e03a8,#cc4678,#f89441,#f0f921);"></div>
+                                    <div class="color-ramp-opt" data-scheme="gray" style="background:linear-gradient(90deg,#111,#333,#666,#999,#ccc,#eee,#fff);"></div>
+                                    <div class="color-ramp-opt active" data-scheme="topo" style="background:linear-gradient(90deg,#006837,#1a9850,#66bd63,#a6d96a,#fee08b,#fdae61,#f46d43,#a50026);"></div>
+                                </div>
+                                <div class="color-ramp" id="colorRampPreview"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-lod">
+                        <span>🔺 金字塔层级管理</span>
+                        <span class="arrow">▶</span>
+                    </div>
+                    <div class="accordion-body" id="s-lod">
+                        <div class="form-group">
+                            <div class="lod-info">
+                                <div class="row"><span class="key">当前层级</span><span class="val active-level" id="currentLevelDisplay">L0</span></div>
+                                <div class="row"><span class="key">可视点数</span><span class="val" id="visiblePointsDisplay">0</span></div>
+                                <div class="row"><span class="key">总点数</span><span class="val" id="totalPointsDisplay">0</span></div>
+                                <div class="row"><span class="key">相机高度</span><span class="val" id="cameraHeightDisplay">0 km</span></div>
+                            </div>
+                            <div id="renderStatsDisplay" class="lod-info" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06);"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>层级示意</label>
+                            <div class="lod-bar-container">
+                                <div class="lod-bar" id="lodBar">
+                                    <div class="segment inactive" style="left:0%;width:20%;"></div>
+                                    <div class="segment inactive" style="left:20%;width:20%;"></div>
+                                    <div class="segment inactive" style="left:40%;width:20%;"></div>
+                                    <div class="segment inactive" style="left:60%;width:20%;"></div>
+                                    <div class="segment inactive" style="left:80%;width:20%;"></div>
+                                    <div class="segment-indicator" id="lodIndicator" style="left:10%;"></div>
+                                </div>
+                                <div class="lod-labels"><span>极远</span><span>远</span><span>中</span><span>近</span><span>极近</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ======== IDW + TIN accordion ======== -->
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-interp">
+                        <span>🌐 插值与曲面重建</span>
+                        <span class="arrow">▶</span>
+                    </div>
+                    <div class="accordion-body" id="s-interp">
+
+                        <!-- ── IDW 热力图 ── -->
+                        <div style="margin-bottom:14px;">
+                            <div style="font-size:12px;font-weight:600;color:#c8d0dc;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                                <span style="width:8px;height:8px;border-radius:2px;background:#4A9EFF;flex-shrink:0;display:inline-block;"></span>
+                                IDW 距离加权插值
+                            </div>
+                            <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;line-height:1.5;">
+                                反距离加权（p=2）：自动计算网格分辨率，将离散形变点插值为连续热力色栅图叠加在地图上
+                            </div>
+                            <div style="display:flex;gap:6px;">
+                                <button class="btn btn-primary btn-sm" id="btnRunIDW" style="flex:1;justify-content:center;font-size:12px;">
+                                    ▶ 生成热力图
+                                </button>
+                                <button class="btn btn-ghost btn-sm" id="btnRemoveIDW" style="flex:0 0 auto;justify-content:center;font-size:12px;">
+                                    ✕ 移除
+                                </button>
+                            </div>
+                            <div id="idwStatusBar" style="display:none;margin-top:6px;font-size:11px;color:rgba(255,255,255,0.45);line-height:1.4;"></div>
+                        </div>
+
+                        <div style="height:1px;background:rgba(255,255,255,0.07);margin:10px 0;"></div>
+
+                        <!-- ── TIN 三角网 ── -->
+                        <div>
+                            <div style="font-size:12px;font-weight:600;color:#c8d0dc;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                                <span style="width:8px;height:8px;border-radius:2px;background:#63e6be;flex-shrink:0;display:inline-block;"></span>
+                                量化网格自适应 TIN
+                            </div>
+                            <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;line-height:1.5;">
+                                对点云量化网格聚合后做 Delaunay 三角剖分，生成带形变色的 3D 曲面
+                            </div>
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label style="font-size:11px;">量化格尺寸（米，0 = 自适应）</label>
+                                <div class="slider-row">
+                                    <input type="range" id="tinCellSize" min="0" max="2000" value="0" step="50">
+                                    <span class="val" id="tinCellSizeVal">自适应</span>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom:8px;">
+                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;">
+                                    <input type="checkbox" id="tinShowEdges">
+                                    显示三角网线框
+                                </label>
+                            </div>
+                            <div style="display:flex;gap:6px;">
+                                <button class="btn btn-primary btn-sm" id="btnRunTIN" style="flex:1;justify-content:center;font-size:12px;">
+                                    ▶ 生成 TIN 曲面
+                                </button>
+                                <button class="btn btn-ghost btn-sm" id="btnRemoveTIN" style="flex:0 0 auto;justify-content:center;font-size:12px;">
+                                    ✕ 移除
+                                </button>
+                            </div>
+                            <div id="tinStatusBar" style="display:none;margin-top:6px;font-size:11px;color:rgba(255,255,255,0.45);line-height:1.4;"></div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== MODULE: 交互分析 ======== -->
+            <div class="module-content" id="module-analysis">
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-load-analysis">
+                        <span>📥 数据加载与处理</span>
+                        <span class="arrow open">▶</span>
+                    </div>
+                    <div class="accordion-body open" id="s-load-analysis">
+                        <div class="form-group">
+                            <label>上传数据文件（支持多文件）</label>
+                            <div class="file-upload-zone" id="fileDropZoneAnalysis">
+                                <div class="icon">📄</div>
+                                <div class="text">点击选择或拖拽文件到此处</div>
+                                <div class="formats">JSON · GeoJSON · CSV</div>
+                            </div>
+                            <input type="file" id="fileInputAnalysis" accept=".json,.geojson,.csv" style="display:none" multiple>
+                            <div id="fileInfoContainerAnalysis"></div>
+                            <div id="loadedFilesPanelAnalysis" class="loaded-files-panel" style="display: none;">
+                                <div class="loaded-files-title">✅ 已读取文件：</div>
+                                <div id="loadedFilesListAnalysis"></div>
+                            </div>
+                        </div>
+                        <div class="form-group" id="terrainSamplingGroupAnalysis" style="display:none;">
+                            <label><input type="checkbox" id="enableTerrainSamplingAnalysis" checked> 地形采样（Cesium 地形服务获取高程）</label>
+                        </div>
+                        <div class="form-group" id="dataValidationGroupAnalysis" style="display:none;">
+                            <label><input type="checkbox" id="enableValidationAnalysis" checked> 数据验证（自动过滤无效数据点）</label>
+                        </div>
+                        <div id="dataPreviewAnalysis" style="display:none;">
+                            <div class="stats-grid" id="statsGridAnalysis"></div>
+                        </div>
+                        <div id="actionButtonsAnalysis" style="display:none;margin-top:10px;">
+                            <button class="btn btn-primary" id="loadDataBtnAnalysis" style="width:100%;justify-content:center;">⚡ 加载至地图</button>
+                            <div style="display:flex;gap:6px;margin-top:6px;">
+                                <button class="btn btn-ghost btn-sm" id="batchLoadBtnAnalysis" style="flex:1;justify-content:center;">📦 批量加载</button>
+                                <button class="btn btn-danger btn-sm" id="clearAllBtnAnalysis" style="flex:1;justify-content:center;">🗑️ 清空</button>
+                            </div>
+                        </div>
+                        <div id="loadProgressAnalysis" style="display:none;margin-top:10px;">
+                            <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.5);">
+                                <span id="progressTextAnalysis">处理中...</span>
+                                <span id="progressPercentAnalysis">0%</span>
+                            </div>
+                            <div class="progress-bar"><div class="fill" id="progressFillAnalysis"></div></div>
+                        </div>
+                        <div id="datasetListContainerAnalysis" style="margin-top:10px;">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;display:block;">已加载数据集</label>
+                            <div id="datasetListAnalysis" class="dataset-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-boundary"><span>📍 区域分析</span><span class="arrow open">▶</span></div>
+                    <div class="accordion-body open" id="s-boundary">
+                        <div class="form-group">
+                            <label>加载区域边界</label>
+                            <div class="file-upload-zone" id="boundaryDropZone" style="padding:16px;">
+                                <div class="icon" style="font-size:24px;">🗺️</div>
+                                <div class="text">上传 GeoJSON / Shapefile ZIP</div>
+                                <div class="formats">支持 .geojson / .zip (Shapefile 压缩包)</div>
+                            </div>
+                            <input type="file" id="boundaryFileInput" accept=".geojson,.zip,.json" style="display:none">
+                            <div id="boundaryFileInfo"></div>
+                        </div>
+                        <div class="form-group" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">
+                            <label>🗺️ 矢量底图（内置）</label>
+                            <div style="display:flex;gap:4px;flex-wrap:wrap;" id="vectorMapTabs">
+                                <button class="btn btn-sm vector-map-btn" data-name="全国市级" data-file="data/市.geojson">全国市级</button>
+                                <button class="btn btn-sm vector-map-btn" data-name="全国县级" data-file="data/县.geojson">全国县级</button>
+                                <button class="btn btn-sm vector-map-btn" data-name="昆明市区县" data-file="data/昆明市.geojson">昆明市区县</button>
+                            </div>
+                            <div id="vectorMapStatus" class="hint" style="margin-top:4px;">点击加载矢量底图，选择区域进行分析</div>
+                            <div id="featureListContainer" style="display:none;margin-top:6px;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                                    <span style="font-size:11px;color:rgba(255,255,255,0.4);" id="featureListTitle">选择区域</span>
+                                    <div style="display:flex;gap:4px;align-items:center;">
+                                        <span style="font-size:10px;color:rgba(255,255,255,0.25);" id="featureCount"></span>
+                                        <button class="btn btn-ghost btn-sm" id="showAllBoundariesBtn" style="font-size:10px;padding:2px 8px !important;display:none;">🌐 显示全部</button>
+                                    </div>
+                                </div>
+                                <div id="featureList" style="max-height:180px;overflow-y:auto;border-radius:4px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);"></div>
+                                <div id="featureSearch" style="display:none;margin-bottom:4px;">
+                                    <input type="text" id="featureSearchInput" placeholder="搜索区域名称..." style="width:100%;padding:5px 8px;border-radius:4px;background:rgba(255,255,255,0.06);color:#c8d0dc;border:1px solid rgba(255,255,255,0.08);font-size:11px;outline:none;">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="boundaryInfoContainer"></div>
+                        <div id="regionStats" style="display:none;">
+                            <label style="margin-top:8px;">区域统计结果</label>
+                            <div class="analysis-result" id="regionStatsContent">
+                                <div class="row"><span class="key">区域内点数</span><span class="val" id="regionPointCount">0</span></div>
+                                <div class="row"><span class="key">平均形变</span><span class="val" id="regionMean">—</span></div>
+                                <div class="row"><span class="key">最大沉降</span><span class="val highlight-down" id="regionMinDef">—</span></div>
+                                <div class="row"><span class="key">最大抬升</span><span class="val highlight-up" id="regionMaxDef">—</span></div>
+                                <div class="row"><span class="key">标准差</span><span class="val" id="regionStd">—</span></div>
+                            </div>
+                            <div style="display:flex;gap:6px;margin-top:6px;">
+                                <button class="btn btn-primary btn-sm" id="recalcRegionBtn" style="flex:1;justify-content:center;">🔄 重新计算</button>
+                                <button class="btn btn-danger btn-sm" id="clearBoundaryBtn" style="flex:1;justify-content:center;">🗑️ 清除边界</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-timeseries"><span>📽️ 时间序列视频（自动加载）</span><span class="arrow open">▶</span></div>
+                    <div class="accordion-body open" id="s-timeseries">
+                        <div class="form-group">
+                            <label>🎬 时间轴播放控制</label>
+                            <div class="time-control">
+                                <button class="time-btn" id="timePrevBtn" title="上一帧">⏮</button>
+                                <button class="time-btn" id="timePlayBtn" title="播放/暂停">▶</button>
+                                <button class="time-btn" id="timeNextBtn" title="下一帧">⏭</button>
+                                <span class="time-label" id="timeDisplay">—</span>
+                            </div>
+                            <div class="slider-row">
+                                <input type="range" id="timeSlider" min="0" max="100" value="0" step="1">
+                            </div>
+                            <div class="hint">✅ 上传多年数据后自动启用播放，支持暂停/继续</div>
+                        </div>
+                        <div class="form-group">
+                            <label>播放速度</label>
+                            <div class="slider-row">
+                                <input type="range" id="playSpeed" min="0.5" max="5" value="1" step="0.5">
+                                <span class="val" id="playSpeedVal">1x</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>点击点云查看时间序列</label>
+                            <div class="switch-row">
+                                <div><div class="label">点选查询模式</div><div class="hint">点击地图上的点查看该点的形变信息</div></div>
+                                <div class="toggle-switch" id="togglePickMode"><div class="knob"></div></div>
+                            </div>
+                            <div id="pickedPointInfo" style="display:none;margin-top:6px;padding:8px;border-radius:4px;background:rgba(74,158,255,0.06);font-size:12px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-anomaly"><span>⚠️ 异常变形检测</span><span class="arrow">▶</span></div>
+                    <div class="accordion-body" id="s-anomaly">
+                        <div class="form-group">
+                            <label>检测方法</label>
+                            <select class="blend-select" id="anomalyMethod">
+                                <option value="stddev">标准差阈值 (StdDev)</option>
+                                <option value="percentile">百分位数 (Percentile)</option>
+                                <option value="spatial">空间邻域差异 (Spatial)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="anomalyThresholdGroup">
+                            <label>阈值</label>
+                            <div class="slider-row">
+                                <input type="range" id="anomalyThreshold" min="0.5" max="3" value="2" step="0.1">
+                                <span class="val" id="anomalyThresholdVal">2.0 σ</span>
+                            </div>
+                        </div>
+                        <div class="form-group" id="neighborhoodGroup" style="display:none;">
+                            <label>邻域半径 (km)</label>
+                            <div class="slider-row">
+                                <input type="range" id="neighborhoodRadius" min="0.1" max="5" value="1" step="0.1">
+                                <span class="val" id="neighborhoodRadiusVal">1.0 km</span>
+                            </div>
+                        </div>
+                        <div class="anomaly-legend">
+                            <span><span class="dot anomaly"></span>异常点</span>
+                            <span><span class="dot normal"></span>正常点</span>
+                        </div>
+                        <div style="display:flex;gap:6px;margin-top:6px;">
+                            <button class="btn btn-primary btn-sm" id="runAnomalyBtn" style="flex:1;justify-content:center;">🔍 执行检测</button>
+                            <button class="btn btn-ghost btn-sm" id="clearAnomalyBtn" style="flex:1;justify-content:center;">✕ 清除标记</button>
+                        </div>
+                        <div id="anomalyResult" style="display:none;margin-top:8px;">
+                            <div class="analysis-result" id="anomalyResultContent">
+                                <div class="row"><span class="key">检测方法</span><span class="val" id="anomalyMethodDisplay">—</span></div>
+                                <div class="row"><span class="key">全时段异常</span><span class="val" id="anomalyCount">0</span></div>
+                                <div class="row"><span class="key">异常比例</span><span class="val" id="anomalyRatio">0%</span></div>
+                                <div class="row" id="anomalyPeriodRow" style="display:none;">
+                                    <span class="key" style="color:#4A9EFF;">当前时段</span>
+                                    <span class="val" style="color:#ff6b6b;font-weight:600;" id="anomalyPeriodCount">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== MODULE: 漫游模式 ======== -->
+            <div class="module-content" id="module-roam">
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-roam-load">
+                        <span>📥 数据加载与处理</span>
+                        <span class="arrow open">▶</span>
+                    </div>
+                    <div class="accordion-body open" id="s-roam-load">
+                        <div class="form-group">
+                            <label>上传数据文件（支持多文件）</label>
+                            <div class="file-upload-zone" id="fileDropZoneRoam">
+                                <div class="icon">📄</div>
+                                <div class="text">点击选择或拖拽文件到此处</div>
+                                <div class="formats">JSON · GeoJSON · CSV</div>
+                            </div>
+                            <input type="file" id="fileInputRoam" accept=".json,.geojson,.csv" style="display:none" multiple>
+                            <div id="fileInfoContainerRoam"></div>
+                            <div id="loadedFilesPanelRoam" class="loaded-files-panel" style="display: none;">
+                                <div class="loaded-files-title">✅ 已读取文件：</div>
+                                <div id="loadedFilesListRoam"></div>
+                            </div>
+                        </div>
+                        <div class="form-group" id="terrainSamplingGroupRoam" style="display:none;">
+                            <label><input type="checkbox" id="enableTerrainSamplingRoam" checked> 地形采样（Cesium 地形服务获取高程）</label>
+                        </div>
+                        <div class="form-group" id="dataValidationGroupRoam" style="display:none;">
+                            <label><input type="checkbox" id="enableValidationRoam" checked> 数据验证（自动过滤无效数据点）</label>
+                        </div>
+                        <div id="dataPreviewRoam" style="display:none;">
+                            <div class="stats-grid" id="statsGridRoam"></div>
+                        </div>
+                        <div id="actionButtonsRoam" style="display:none;margin-top:10px;">
+                            <button class="btn btn-primary" id="loadDataBtnRoam" style="width:100%;justify-content:center;">⚡ 加载至地图</button>
+                            <div style="display:flex;gap:6px;margin-top:6px;">
+                                <button class="btn btn-ghost btn-sm" id="batchLoadBtnRoam" style="flex:1;justify-content:center;">📦 批量加载</button>
+                                <button class="btn btn-danger btn-sm" id="clearAllBtnRoam" style="flex:1;justify-content:center;">🗑️ 清空</button>
+                            </div>
+                        </div>
+                        <div id="loadProgressRoam" style="display:none;margin-top:10px;">
+                            <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.5);">
+                                <span id="progressTextRoam">处理中...</span>
+                                <span id="progressPercentRoam">0%</span>
+                            </div>
+                            <div class="progress-bar"><div class="fill" id="progressFillRoam"></div></div>
+                        </div>
+                        <div id="datasetListContainerRoam" style="margin-top:10px;">
+                            <label style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;display:block;">已加载数据集</label>
+                            <div id="datasetListRoam" class="dataset-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion">
+                    <div class="accordion-header" data-target="s-roam-modes">
+                        <span>🎯 漫游模式选择</span>
+                        <span class="arrow">▶</span>
+                    </div>
+                    <div class="accordion-body" id="s-roam-modes">
+                        <div class="roam-modes">
+                            <div class="roam-card" data-mode="high-altitude">
+                                <div class="icon">🛩️</div>
+                                <div class="info">
+                                    <div class="name">高空俯瞰</div>
+                                    <div class="desc">飞至高空，纵览全局</div>
+                                </div>
+                            </div>
+                            <div class="roam-card" data-mode="low-orbit">
+                                <div class="icon">🔄</div>
+                                <div class="info">
+                                    <div class="name">低空环绕</div>
+                                    <div class="desc">围绕数据区域低空盘旋</div>
+                                </div>
+                            </div>
+                            <div class="roam-card" data-mode="area-patrol">
+                                <div class="icon">🚁</div>
+                                <div class="info">
+                                    <div class="name">区域巡视</div>
+                                    <div class="desc">沿边界自动巡航</div>
+                                </div>
+                            </div>
+                            <div class="roam-card" data-mode="custom">
+                                <div class="icon">✈️</div>
+                                <div class="info">
+                                    <div class="name">自定义漫游</div>
+                                    <div class="desc">点击地图添加航点，沿自定义路径飞行</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="roam-status" id="roamStatus">
+                            <span class="pulse"></span>
+                            <span>准备就绪</span>
+                        </div>
+                        <div id="waypointControls" style="display:none;">
+                            <div class="waypoint-hint" id="waypointHint">
+                                <span class="dot"></span>
+                                <span>航点添加模式已开启，点击地图添加航点</span>
+                            </div>
+                            <div class="form-group">
+                                <label>航点管理</label>
+                                <div style="display:flex;gap:6px;margin-bottom:6px;">
+                                    <button class="btn btn-primary btn-sm" id="addWaypointBtn" style="flex:1;justify-content:center;">📌 添加航点</button>
+                                    <button class="btn btn-danger btn-sm" id="clearWaypointsBtn" style="flex:1;justify-content:center;">🗑️ 清空</button>
+                                </div>
+                                <div id="waypointList" class="waypoint-list">
+                                    <div class="empty-state">暂无航点</div>
+                                </div>
+                                <div style="font-size:11px;color:rgba(255,255,255,0.35);margin-top:4px;" id="waypointCount">共 0 个航点</div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>飞行速度</label>
+                            <div class="slider-row">
+                                <input type="range" id="roamSpeed" min="0.2" max="3" value="0.8" step="0.1">
+                                <span class="val" id="roamSpeedVal">0.8x</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <button class="btn btn-primary" id="roamStartBtn" style="flex:1;justify-content:center;">▶ 开始漫游</button>
+                            <button class="btn btn-danger" id="roamStopBtn" style="flex:1;justify-content:center;display:none;">■ 停止</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/cesium@1.119/Build/Cesium/Cesium.js"></script>
+    <script type="module" src="main.js"></script>
+
+    <!-- 主题切换逻辑（暗夜/白天） -->
+    <script>
+    (function() {
+        const html = document.documentElement;
+        const btn = document.getElementById('tbThemeToggle');
+        const iconSun = document.getElementById('themeIconSun');
+        const iconMoon = document.getElementById('themeIconMoon');
+        const tooltip = document.getElementById('themeTooltip');
+
+        // 读取本地存储中的主题设置，默认为暗夜模式
+        let currentTheme = localStorage.getItem('insar-theme') || 'dark';
+
+        function applyTheme(theme) {
+            if (theme === 'light') {
+                html.setAttribute('data-theme', 'light');
+                // 白天模式：显示月亮图标（点击可切换到暗夜）
+                iconSun.style.display = 'none';
+                iconMoon.style.display = '';
+                tooltip.textContent = '切换至暗夜模式';
+                btn.title = '切换至暗夜模式';
+            } else {
+                html.removeAttribute('data-theme');
+                // 暗夜模式：显示太阳图标（点击可切换到白天）
+                iconSun.style.display = '';
+                iconMoon.style.display = 'none';
+                tooltip.textContent = '切换至白天模式';
+                btn.title = '切换至白天模式';
+            }
+            currentTheme = theme;
+            localStorage.setItem('insar-theme', theme);
+        }
+
+        // 初始化主题
+        applyTheme(currentTheme);
+
+        // 点击切换
+        btn.addEventListener('click', function() {
+            applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
+    })();
+    </script>
+</body>
+</html>
